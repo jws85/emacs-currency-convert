@@ -166,6 +166,70 @@ The return value is a list of (CURRENCY . AMOUNT) pairs."
       (currency-convert--display-alist alist))
     alist))
 
+(defun currency-convert--print-date ()
+  "Internal helper to print the date associated with the currency file."
+  (let ((date (cdr (assoc 'date currency-convert--rates))))
+    (message "Using exchange rates from %s; update with M-x currency-convert-update-rates" date)))
+
+(defun currency-convert--calc-unit-list (currency &optional conversion base)
+  "Helper that makes list for specific units for Emacs Calc.
+
+CURRENCY should be a symbol; it will be what is displayed in Emacs Calc as the
+unit.
+
+CONVERSION is the conversion value right out of the provided table.
+
+BASE is the base unit; it should be a symbol as well.
+
+When CURRENCY is itself a base unit, set CONVERSION and BASE to nil."
+  (list currency
+        (if (or conversion base)
+            (format "%s / %f" base conversion)
+          nil)
+        (symbol-name currency)))
+
+(defun currency-convert--calc-undefine-unit (unit)
+  "Helper to undefine UNIT from 'math-additional-units', if it exists."
+  (condition-case nil
+      (calc-undefine-unit unit)
+    (error nil)))
+
+;;;###autoload
+(defun currency-convert-calc-load ()
+  "Load currencies into Emacs Calc's math-additional-units table.
+
+To have this available when using Calc, add this function to
+'calc-start-hook.
+
+Any disclaimers regarding conversion accuracy in the documentation
+also apply to any currency conversions performed within Emacs Calc."
+  (currency-convert--ensure-rates)
+
+  ;; Print the date that the file was last loaded
+  (currency-convert--print-date)
+
+  ;; Process the local currency file
+  (let* ((base-unit (intern (cdr (cadr currency-convert--rates))))
+         (base-list (list (currency-convert--calc-unit-list base-unit)))
+         (rest-list (mapcar
+                     (lambda (curr-cons)
+                       (currency-convert--calc-unit-list
+                        (car curr-cons)
+                        (cdr curr-cons)
+                        base-unit))
+                     (cdar currency-convert--rates))))
+
+    ;; Undefine currency units, if previously defined
+    (currency-convert--calc-undefine-unit base-unit)
+    (dolist (unit (currency-convert--currency-names))
+      (currency-convert--calc-undefine-unit (intern unit)))
+
+    ;; Define new values
+    (setq math-additional-units (append math-additional-units
+                                        base-list
+                                        rest-list)
+          math-units-table nil)))
+
 (provide 'currency-convert)
 
 ;;; currency-convert.el ends here
